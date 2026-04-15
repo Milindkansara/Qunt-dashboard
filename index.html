@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>V4 Quant Multi-Timeframe Dashboard</title>
+  <title>V4 Quant Dashboard Fixed</title>
   <style>
     body { font-family: Arial; background:#0b1220; color:white; padding:20px; }
     h2 { margin-bottom:5px; }
@@ -12,18 +12,16 @@
     button { cursor:pointer; }
     .buy { color:#22c55e; font-weight:bold; }
     .sell { color:#ef4444; font-weight:bold; }
-    .neutral { color:#facc15; }
     .aplus { background:#14532d; }
-    .danger { background:#3b1d1d; }
   </style>
 </head>
 
 <body>
 
-<h2>📊 V4 MULTI-TIMEFRAME QUANT DASHBOARD</h2>
-<p>15m + 1H + 1D + 1W confluence scoring system</p>
+<h2>📊 V4 QUANT DASHBOARD (FIXED)</h2>
+<p>Multi-timeframe scoring + stable watchlist</p>
 
-<input id="stockInput" placeholder="Add ticker (NVDA)" />
+<input id="stockInput" placeholder="Enter ticker (NVDA)" />
 <button onclick="addStock()">➕ Add</button>
 <button onclick="clearAll()">🗑 Clear</button>
 <button onclick="load()">🔄 Refresh</button>
@@ -36,8 +34,8 @@
       <th>1H</th>
       <th>1D</th>
       <th>1W</th>
-      <th>Buy Score</th>
-      <th>Sell Score</th>
+      <th>Buy</th>
+      <th>Sell</th>
       <th>Bias</th>
       <th>Remove</th>
     </tr>
@@ -47,40 +45,59 @@
 
 <script>
 
-// ---------------- STORAGE ----------------
-function getWatchlist(){
-  return JSON.parse(localStorage.getItem("watchlist") || "[]");
+let watchlist = [];
+
+/* ---------------- SAFE INIT ---------------- */
+function initWatchlist(){
+  try {
+    const saved = localStorage.getItem("watchlist");
+    watchlist = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(watchlist)) watchlist = [];
+  } catch(e){
+    watchlist = [];
+  }
 }
 
-function saveWatchlist(list){
-  localStorage.setItem("watchlist", JSON.stringify(list));
+/* ---------------- SAVE ---------------- */
+function saveWatchlist(){
+  try {
+    localStorage.setItem("watchlist", JSON.stringify(watchlist));
+  } catch(e){
+    console.log("Save failed");
+  }
 }
 
-// ---------------- ADD / REMOVE ----------------
+/* ---------------- ADD ---------------- */
 function addStock(){
-  let s = document.getElementById("stockInput").value.toUpperCase().trim();
-  if(!s) return;
+  let input = document.getElementById("stockInput");
+  let stock = input.value.toUpperCase().trim();
 
-  let list = getWatchlist();
-  if(!list.includes(s)) list.push(s);
+  if(!stock) return;
 
-  saveWatchlist(list);
-  document.getElementById("stockInput").value = "";
+  if(!watchlist.includes(stock)){
+    watchlist.push(stock);
+    saveWatchlist();
+  }
+
+  input.value = "";
   load();
 }
 
+/* ---------------- REMOVE ---------------- */
 function removeStock(s){
-  let list = getWatchlist().filter(x => x !== s);
-  saveWatchlist(list);
+  watchlist = watchlist.filter(x => x !== s);
+  saveWatchlist();
   load();
 }
 
+/* ---------------- CLEAR ---------------- */
 function clearAll(){
-  localStorage.removeItem("watchlist");
+  watchlist = [];
+  saveWatchlist();
   load();
 }
 
-// ---------------- DATA ----------------
+/* ---------------- FETCH ---------------- */
 async function fetchStock(symbol){
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
   const res = await fetch(url);
@@ -88,13 +105,13 @@ async function fetchStock(symbol){
   return json.quoteResponse.result[0];
 }
 
-// ---------------- RSI PROXY ----------------
+/* ---------------- RSI PROXY ---------------- */
 function rsi(change){
   let r = 50 + (change * 5);
   return Math.max(20, Math.min(80, Math.round(r)));
 }
 
-// ---------------- TIMEFRAME SCORE ----------------
+/* ---------------- SCORE ---------------- */
 function score(change, rsi, tf){
 
   let weight = {
@@ -122,7 +139,7 @@ function score(change, rsi, tf){
   return {buy, sell};
 }
 
-// ---------------- BIAS ----------------
+/* ---------------- BIAS ---------------- */
 function bias(buy, sell){
   if(buy >= 180) return "🔥 A+ BUY";
   if(sell >= 180) return "🔥 A+ SELL";
@@ -131,20 +148,20 @@ function bias(buy, sell){
   return "NEUTRAL";
 }
 
-// ---------------- MAIN ----------------
+/* ---------------- LOAD ---------------- */
 async function load(){
+
+  initWatchlist();
 
   const table = document.getElementById("data");
   table.innerHTML = "";
 
-  let list = getWatchlist();
-
-  if(list.length === 0){
+  if(watchlist.length === 0){
     table.innerHTML = "<tr><td colspan='9'>Add stocks to begin</td></tr>";
     return;
   }
 
-  for(let s of list){
+  for(let s of watchlist){
 
     try{
       const d = await fetchStock(s);
@@ -154,7 +171,6 @@ async function load(){
 
       let r = rsi(change);
 
-      // MULTI TIMEFRAME SIMULATION
       let tf15 = score(change * 1.2, r + 5, "15m");
       let tf1h = score(change, r, "1h");
       let tf1d = score(change * 0.7, r - 5, "1d");
@@ -163,23 +179,20 @@ async function load(){
       let buy = tf15.buy + tf1h.buy + tf1d.buy + tf1w.buy;
       let sell = tf15.sell + tf1h.sell + tf1d.sell + tf1w.sell;
 
-      let finalBias = bias(buy, sell);
+      let b = bias(buy, sell);
 
-      let cls = finalBias.includes("A+") ? "aplus" : "";
+      let cls = b.includes("A+") ? "aplus" : "";
 
       table.innerHTML += `
         <tr class="${cls}">
-          <td>${s}<br><small>${price}</small></td>
-
+          <td>${s}<br>${price}</td>
           <td>${tf15.buy.toFixed(0)}</td>
           <td>${tf1h.buy.toFixed(0)}</td>
           <td>${tf1d.buy.toFixed(0)}</td>
           <td>${tf1w.buy.toFixed(0)}</td>
-
           <td class="buy">${buy.toFixed(0)}</td>
           <td class="sell">${sell.toFixed(0)}</td>
-          <td>${finalBias}</td>
-
+          <td>${b}</td>
           <td><button onclick="removeStock('${s}')">❌</button></td>
         </tr>
       `;
