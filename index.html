@@ -108,16 +108,14 @@ function removeStock(s){
 }
 
 /* ---------------- FETCH ---------------- */
-  async function fetchStock(symbol){
+async function fetchStock(symbol){
   try {
-    const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${symbol}?apikey=demo`);
+    const res = await fetch(`https://stockprices.dev/api/stocks/${symbol}`);
     const data = await res.json();
 
-    if(!data || !data[0]) return null;
-
     return {
-      regularMarketPrice: data[0].price,
-      regularMarketChangePercent: data[0].changesPercentage
+      regularMarketPrice: data.Price,
+      regularMarketChangePercent: data.ChangePercentage
     };
 
   } catch(e){
