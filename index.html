@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>V4 Quant Dashboard Fixed</title>
+  <title>V4 Quant Dashboard (Stable)</title>
   <style>
     body { font-family: Arial; background:#0b1220; color:white; padding:20px; }
     h2 { margin-bottom:5px; }
+    input, button { padding:10px; margin:5px; }
     table { width:100%; border-collapse: collapse; margin-top:20px; }
     th, td { border:1px solid #334155; padding:8px; text-align:center; font-size:13px; }
     th { background:#1e293b; }
-    input, button { padding:10px; margin:5px; }
     button { cursor:pointer; }
     .buy { color:#22c55e; font-weight:bold; }
     .sell { color:#ef4444; font-weight:bold; }
@@ -18,12 +18,12 @@
 
 <body>
 
-<h2>📊 V4 QUANT DASHBOARD (FIXED)</h2>
-<p>Multi-timeframe scoring + stable watchlist</p>
+<h2>📊 V4 QUANT DASHBOARD (STABLE)</h2>
+<p>Default AI / Semi universe + editable watchlist</p>
 
 <input id="stockInput" placeholder="Enter ticker (NVDA)" />
 <button onclick="addStock()">➕ Add</button>
-<button onclick="clearAll()">🗑 Clear</button>
+<button onclick="resetDefaults()">♻ Reset</button>
 <button onclick="load()">🔄 Refresh</button>
 
 <table>
@@ -47,14 +47,22 @@
 
 let watchlist = [];
 
-/* ---------------- SAFE INIT ---------------- */
+/* ---------------- DEFAULT UNIVERSE ---------------- */
+const defaults = [
+  "NVDA","TSLA","AAPL","META","GOOGL","NFLX",
+  "AMD","QCOM","TSM","MU","AVGO","ASML","ARM"
+];
+
+/* ---------------- INIT ---------------- */
 function initWatchlist(){
   try {
     const saved = localStorage.getItem("watchlist");
-    watchlist = saved ? JSON.parse(saved) : [];
-    if (!Array.isArray(watchlist)) watchlist = [];
+    watchlist = saved ? JSON.parse(saved) : defaults;
+
+    if (!Array.isArray(watchlist)) watchlist = defaults;
+
   } catch(e){
-    watchlist = [];
+    watchlist = defaults;
   }
 }
 
@@ -63,8 +71,15 @@ function saveWatchlist(){
   try {
     localStorage.setItem("watchlist", JSON.stringify(watchlist));
   } catch(e){
-    console.log("Save failed");
+    console.log("save failed");
   }
+}
+
+/* ---------------- RESET ---------------- */
+function resetDefaults(){
+  watchlist = defaults;
+  saveWatchlist();
+  load();
 }
 
 /* ---------------- ADD ---------------- */
@@ -73,6 +88,8 @@ function addStock(){
   let stock = input.value.toUpperCase().trim();
 
   if(!stock) return;
+
+  initWatchlist();
 
   if(!watchlist.includes(stock)){
     watchlist.push(stock);
@@ -90,13 +107,6 @@ function removeStock(s){
   load();
 }
 
-/* ---------------- CLEAR ---------------- */
-function clearAll(){
-  watchlist = [];
-  saveWatchlist();
-  load();
-}
-
 /* ---------------- FETCH ---------------- */
 async function fetchStock(symbol){
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
@@ -105,7 +115,7 @@ async function fetchStock(symbol){
   return json.quoteResponse.result[0];
 }
 
-/* ---------------- RSI PROXY ---------------- */
+/* ---------------- SIMPLE RSI ---------------- */
 function rsi(change){
   let r = 50 + (change * 5);
   return Math.max(20, Math.min(80, Math.round(r)));
@@ -157,17 +167,20 @@ async function load(){
   table.innerHTML = "";
 
   if(watchlist.length === 0){
-    table.innerHTML = "<tr><td colspan='9'>Add stocks to begin</td></tr>";
+    table.innerHTML = "<tr><td colspan='9'>No stocks</td></tr>";
     return;
   }
 
   for(let s of watchlist){
 
     try{
+
       const d = await fetchStock(s);
 
+      if(!d) continue;
+
       let change = d.regularMarketChangePercent || 0;
-      let price = d.regularMarketPrice;
+      let price = d.regularMarketPrice || "N/A";
 
       let r = rsi(change);
 
@@ -198,7 +211,7 @@ async function load(){
       `;
 
     } catch(e){
-      console.log("error", s);
+      console.log("error", s, e);
     }
   }
 }
