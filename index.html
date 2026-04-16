@@ -108,11 +108,11 @@ function removeStock(s){
 }
 
 /* ---------------- FETCH ---------------- */
-async function fetchStock(symbol){
-  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  return json.quoteResponse.result[0];
+  async function fetchStock(symbol){
+  return {
+    regularMarketPrice: (100 + Math.random()*200).toFixed(2),
+    regularMarketChangePercent: (Math.random()*4 - 2)
+  };
 }
 
 /* ---------------- SIMPLE RSI ---------------- */
