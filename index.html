@@ -1,236 +1,181 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>V4 Quant Dashboard (Stable)</title>
+  <title>V6 Real Quant Engine</title>
   <style>
     body { font-family: Arial; background:#0b1220; color:white; padding:20px; }
-    h2 { margin-bottom:5px; }
     input, button { padding:10px; margin:5px; }
-    table { width:100%; border-collapse: collapse; margin-top:20px; }
-    th, td { border:1px solid #334155; padding:8px; text-align:center; font-size:13px; }
-    th { background:#1e293b; }
-    button { cursor:pointer; }
+    .card { background:#1e293b; padding:15px; margin-top:15px; border-radius:10px; }
     .buy { color:#22c55e; font-weight:bold; }
     .sell { color:#ef4444; font-weight:bold; }
-    .aplus { background:#14532d; }
   </style>
 </head>
 
 <body>
 
-<h2>📊 V4 QUANT DASHBOARD (STABLE)</h2>
-<p>Default AI / Semi universe + editable watchlist</p>
+<h2>📊 V6 REAL QUANT ENGINE</h2>
 
-<input id="stockInput" placeholder="Enter ticker (NVDA)" />
+<input id="stockInput" placeholder="Add stock (AAPL)" />
 <button onclick="addStock()">➕ Add</button>
 <button onclick="resetDefaults()">♻ Reset</button>
-<button onclick="load()">🔄 Refresh</button>
 
-<table>
-  <thead>
-    <tr>
-      <th>Stock</th>
-      <th>15m</th>
-      <th>1H</th>
-      <th>1D</th>
-      <th>1W</th>
-      <th>Buy</th>
-      <th>Sell</th>
-      <th>Bias</th>
-      <th>Remove</th>
-    </tr>
-  </thead>
-  <tbody id="data"></tbody>
-</table>
+<div id="container"></div>
+
+<script src="https://s3.tradingview.com/tv.js"></script>
 
 <script>
 
+/* ---------------- WATCHLIST ---------------- */
 let watchlist = [];
 
-/* ---------------- DEFAULT UNIVERSE ---------------- */
 const defaults = [
   "NVDA","TSLA","AAPL","META","GOOGL","NFLX",
   "AMD","QCOM","TSM","MU","AVGO","ASML","ARM"
 ];
 
 /* ---------------- INIT ---------------- */
-function initWatchlist(){
-  try {
+function init(){
+  try{
     const saved = localStorage.getItem("watchlist");
     watchlist = saved ? JSON.parse(saved) : defaults;
-
-    if (!Array.isArray(watchlist)) watchlist = defaults;
-
-  } catch(e){
+    if(!Array.isArray(watchlist)) watchlist = defaults;
+  }catch{
     watchlist = defaults;
   }
 }
 
 /* ---------------- SAVE ---------------- */
-function saveWatchlist(){
-  try {
-    localStorage.setItem("watchlist", JSON.stringify(watchlist));
-  } catch(e){
-    console.log("save failed");
+function save(){
+  localStorage.setItem("watchlist", JSON.stringify(watchlist));
+}
+
+/* ---------------- ADD ---------------- */
+function addStock(){
+  let v = document.getElementById("stockInput").value.toUpperCase().trim();
+  if(!v) return;
+
+  if(!watchlist.includes(v)){
+    watchlist.push(v);
+    save();
   }
+
+  document.getElementById("stockInput").value="";
+  load();
 }
 
 /* ---------------- RESET ---------------- */
 function resetDefaults(){
   watchlist = defaults;
-  saveWatchlist();
-  load();
-}
-
-/* ---------------- ADD ---------------- */
-function addStock(){
-  let input = document.getElementById("stockInput");
-  let stock = input.value.toUpperCase().trim();
-
-  if(!stock) return;
-
-  initWatchlist();
-
-  if(!watchlist.includes(stock)){
-    watchlist.push(stock);
-    saveWatchlist();
-  }
-
-  input.value = "";
+  save();
   load();
 }
 
 /* ---------------- REMOVE ---------------- */
 function removeStock(s){
   watchlist = watchlist.filter(x => x !== s);
-  saveWatchlist();
+  save();
   load();
 }
 
-/* ---------------- FETCH ---------------- */
+/* ---------------- REAL DATA (STOOQ FREE API) ---------------- */
 async function fetchStock(symbol){
   try {
-    const url = `https://api.allorigins.win/raw?url=https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-    
+    const url = `https://stooq.com/q/l/?s=${symbol.toLowerCase()}.us&f=sd2t2ohlcv&h&e=json`;
     const res = await fetch(url);
-    const json = await res.json();
+    const data = await res.json();
 
-    const d = json.quoteResponse.result[0];
+    const d = data?.symbols?.[0];
+    if(!d) return null;
+
+    let price = parseFloat(d.close);
+    let open = parseFloat(d.open);
+
+    let change = ((price - open) / open) * 100;
 
     return {
-      regularMarketPrice: d.regularMarketPrice,
-      regularMarketChangePercent: d.regularMarketChangePercent
+      price,
+      change
     };
 
   } catch(e){
-    console.log("API failed, fallback", e);
-
-    // fallback so UI never breaks
-    return {
-      regularMarketPrice: (100 + Math.random()*200).toFixed(2),
-      regularMarketChangePercent: (Math.random()*4 - 2)
-    };
+    console.log("API error", e);
+    return null;
   }
 }
 
-/* ---------------- SIMPLE RSI ---------------- */
-function rsi(change){
-  let r = 50 + (change * 5);
-  return Math.max(20, Math.min(80, Math.round(r)));
-}
-
-/* ---------------- SCORE ---------------- */
-function score(change, rsi, tf){
-
-  let weight = {
-    "15m": 1.5,
-    "1h": 1,
-    "1d": 0.7,
-    "1w": 0.4
-  }[tf];
+/* ---------------- SCORING ENGINE ---------------- */
+function scoreEngine(change){
 
   let buy = 0;
   let sell = 0;
 
-  if(change > 1) buy += 25 * weight;
-  if(change > 0.3) buy += 10 * weight;
+  if(change > 2) buy += 80;
+  if(change < -2) sell += 80;
 
-  if(change < -1) sell += 25 * weight;
-  if(change < -0.3) sell += 10 * weight;
+  if(change > 1) buy += 50;
+  if(change < -1) sell += 50;
 
-  if(rsi > 60) buy += 20 * weight;
-  if(rsi < 40) sell += 20 * weight;
+  if(change > 0.3) buy += 20;
+  if(change < -0.3) sell += 20;
 
-  if(change > 0) buy += 10 * weight;
-  if(change < 0) sell += 10 * weight;
+  let bias = "NEUTRAL";
 
-  return {buy, sell};
-}
+  if(buy > sell + 40) bias = "BUY";
+  if(sell > buy + 40) bias = "SELL";
 
-/* ---------------- BIAS ---------------- */
-function bias(buy, sell){
-  if(buy >= 180) return "🔥 A+ BUY";
-  if(sell >= 180) return "🔥 A+ SELL";
-  if(buy > sell + 40) return "BUY";
-  if(sell > buy + 40) return "SELL";
-  return "NEUTRAL";
+  if(buy > 100) bias = "🔥 A+ BUY";
+  if(sell > 100) bias = "🔥 A+ SELL";
+
+  return {buy, sell, bias};
 }
 
 /* ---------------- LOAD ---------------- */
 async function load(){
 
-  initWatchlist();
+  init();
 
-  const table = document.getElementById("data");
-  table.innerHTML = "";
-
-  if(watchlist.length === 0){
-    table.innerHTML = "<tr><td colspan='9'>No stocks</td></tr>";
-    return;
-  }
+  let container = document.getElementById("container");
+  container.innerHTML = "";
 
   for(let s of watchlist){
 
-    try{
+    let d = await fetchStock(s);
 
-      const d = await fetchStock(s);
-
-      if(!d) continue;
-
-      let change = d.regularMarketChangePercent || 0;
-      let price = d.regularMarketPrice || "N/A";
-
-      let r = rsi(change);
-
-      let tf15 = score(change * 1.2, r + 5, "15m");
-      let tf1h = score(change, r, "1h");
-      let tf1d = score(change * 0.7, r - 5, "1d");
-      let tf1w = score(change * 0.4, r - 10, "1w");
-
-      let buy = tf15.buy + tf1h.buy + tf1d.buy + tf1w.buy;
-      let sell = tf15.sell + tf1h.sell + tf1d.sell + tf1w.sell;
-
-      let b = bias(buy, sell);
-
-      let cls = b.includes("A+") ? "aplus" : "";
-
-      table.innerHTML += `
-        <tr class="${cls}">
-          <td>${s}<br>${price}</td>
-          <td>${tf15.buy.toFixed(0)}</td>
-          <td>${tf1h.buy.toFixed(0)}</td>
-          <td>${tf1d.buy.toFixed(0)}</td>
-          <td>${tf1w.buy.toFixed(0)}</td>
-          <td class="buy">${buy.toFixed(0)}</td>
-          <td class="sell">${sell.toFixed(0)}</td>
-          <td>${b}</td>
-          <td><button onclick="removeStock('${s}')">❌</button></td>
-        </tr>
-      `;
-
-    } catch(e){
-      console.log("error", s, e);
+    if(!d){
+      container.innerHTML += `<div class="card">❌ ${s} data unavailable</div>`;
+      continue;
     }
+
+    let score = scoreEngine(d.change);
+
+    container.innerHTML += `
+      <div class="card">
+        <h3>${s} <button onclick="removeStock('${s}')">❌</button></h3>
+
+        <p>
+          Price: <b>${d.price}</b><br>
+          Change: <b>${d.change.toFixed(2)}%</b><br>
+          Buy: <span class="buy">${score.buy}</span> | 
+          Sell: <span class="sell">${score.sell}</span><br>
+          <b>${score.bias}</b>
+        </p>
+
+        <div id="tv_${s}" style="height:300px;"></div>
+      </div>
+    `;
+
+    setTimeout(()=>{
+      new TradingView.widget({
+        width: "100%",
+        height: 300,
+        symbol: "NASDAQ:" + s,
+        interval: "60",
+        timezone: "America/Los_Angeles",
+        theme: "dark",
+        style: "1",
+        container_id: "tv_" + s
+      });
+    }, 200);
   }
 }
 
